@@ -10,13 +10,12 @@ import (
 	"CruptoCLI/modules"
 )
 
-// DecryptDirCommand — рекурсивно расшифровывает все .enc файлы в каталоге
-func DecryptDirCommand(root, output string, masterKey []byte) error {
-	fmt.Printf("🔓 Расшифровка каталога: %s → %s\n", root, output)
+func DecryptDirCommand(root, output string, masterKey []byte, verbose bool) error {
+	logVerbose(verbose, "🔓 Расшифровка каталога: %s → %s", root, output)
 
 	err := os.MkdirAll(output, 0755)
 	if err != nil {
-		return fmt.Errorf("не удалось создать выходной каталог: %v", err)
+		return fmt.Errorf("❌ не удалось создать выходной каталог: %v", err)
 	}
 
 	filesProcessed := 0
@@ -26,46 +25,50 @@ func DecryptDirCommand(root, output string, masterKey []byte) error {
 		if err != nil {
 			return err
 		}
-
 		if info.IsDir() {
-			return nil // не обрабатываем директории
+			return nil
 		}
-
 		if !strings.HasSuffix(path, ".enc") {
-			return nil // только .enc файлы
+			return nil
 		}
 
+		logVerbose(verbose, "📄 Расшифровывается: %s", path)
 		cipherData, err := ioutil.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("не удалось прочитать файл %s: %v", path, err)
+			return fmt.Errorf("❌ не удалось прочитать файл %s: %v", path, err)
 		}
 
 		plainData, err := modules.MultiLayerDecrypt(cipherData, masterKey)
 		if err != nil {
-			return fmt.Errorf("ошибка расшифровки файла %s: %v", path, err)
+			return fmt.Errorf("❌ ошибка расшифровки файла %s: %v", path, err)
 		}
 
-		// Убираем магический заголовок
-		plainData = RemoveMagic(plainData)
+		plainData, err = RemoveMagic(plainData)
+		if err != nil {
+			return fmt.Errorf("❌ ошибка удаления заголовка: %v", err)
+		}
+
+		plainData, err = pkcs7Unpad(plainData, modules.BlockSizeAES)
+		if err != nil {
+			return fmt.Errorf("❌ ошибка PKCS#7 unpad: %v", err)
+		}
 
 		rel, _ := filepath.Rel(root, path)
-		outputPath := filepath.Join(output, strings.TrimSuffix(rel, ".enc"))
+		outPath := filepath.Join(output, strings.TrimSuffix(rel, ".enc"))
 
-		err = os.MkdirAll(filepath.Dir(outputPath), 0755)
+		err = os.MkdirAll(filepath.Dir(outPath), 0755)
 		if err != nil {
-			return fmt.Errorf("не удалось создать структуру каталогов: %v", err)
+			return fmt.Errorf("❌ не удалось создать структуру каталогов: %v", err)
 		}
 
-		err = ioutil.WriteFile(outputPath, plainData, 0644)
+		err = os.WriteFile(outPath, plainData, 0644)
 		if err != nil {
-			return fmt.Errorf("не удалось записать файл %s: %v", outputPath, err)
+			return fmt.Errorf("❌ не удалось записать файл %s: %v", outPath, err)
 		}
 
 		filesProcessed++
 		totalSize += int64(len(plainData))
-
-		fmt.Printf("📄 Расшифрован: %s → %s\n", path, outputPath)
-
+		logVerbose(verbose, "✅ Расшифрован: %s → %s", path, outPath)
 		return nil
 	})
 
@@ -73,8 +76,6 @@ func DecryptDirCommand(root, output string, masterKey []byte) error {
 		return err
 	}
 
-	fmt.Printf("✅ Каталог расшифрован: %s → %s\n", root, output)
-	fmt.Printf("📁 Обработано файлов: %d | Общий размер: %d байт\n", filesProcessed, totalSize)
-
+	logVerbose(verbose, "📁 Обработано файлов: %d | Общий размер: %d байт", filesProcessed, totalSize)
 	return nil
 }

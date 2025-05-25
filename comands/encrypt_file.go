@@ -1,27 +1,38 @@
 package comands
 
 import (
-	"CruptoCLI/modules"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"time"
+
+	"CruptoCLI/modules"
 )
 
-func EncryptFileCommand(input, output string, key []byte) error {
-	start := time.Now()
-
+// EncryptFileCommand — CLI команда для шифрования одного файла
+func EncryptFileCommand(input, output string, masterKey []byte, verbose bool) error {
+	logVerbose(verbose, "📄 Зачитываем файл: %s", input)
 	data, err := ioutil.ReadFile(input)
 	if err != nil {
-		return fmt.Errorf("не удалось прочитать файл: %v", err)
+		return fmt.Errorf("❌ не удалось прочитать файл: %v", err)
 	}
 
-	encrypted := modules.MultiLayerEncrypt(data, key)
-
-	err = ioutil.WriteFile(output, encrypted, 0644)
+	logVerbose(verbose, "🔒 Шифруем через все слои")
+	start := time.Now()
+	encrypted, err := modules.MultiLayerEncrypt(data, masterKey)
 	if err != nil {
-		return fmt.Errorf("не удалось записать файл: %v", err)
+		return fmt.Errorf("❌ ошибка шифрования: %v", err)
+	}
+	elapsed := time.Since(start)
+	speed := float64(len(data)*8) / elapsed.Seconds() / 1_000_000
+	logVerbose(verbose, "⏱ Скорость шифрования: %.2f Мбит/сек", speed)
+
+	logVerbose(verbose, "💾 Сохраняем зашифрованный файл: %s", output)
+	err = os.WriteFile(output, encrypted, 0644)
+	if err != nil {
+		return fmt.Errorf("❌ не удалось записать файл: %v", err)
 	}
 
-	fmt.Printf("⏱ Шифровка завершена за %v\n", time.Since(start))
+	logVerbose(verbose, "✅ Файл успешно зашифрован")
 	return nil
 }

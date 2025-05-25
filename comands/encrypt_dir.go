@@ -5,19 +5,16 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"time"
 
 	"CruptoCLI/modules"
 )
 
-// EncryptDirCommand — рекурсивно шифрует все файлы в каталоге
-func EncryptDirCommand(root, output string, key []byte) error {
-	start := time.Now()
-	fmt.Printf("🔒 Начинаю шифрование каталога '%s' → '%s'\n", root, output)
+func EncryptDirCommand(root, output string, masterKey []byte, verbose bool) error {
+	logVerbose(verbose, "📁 Начинаю шифрование каталога: %s → %s", root, output)
 
 	err := os.MkdirAll(output, 0755)
 	if err != nil {
-		return fmt.Errorf("не удалось создать выходной каталог: %v", err)
+		return fmt.Errorf("❌ не удалось создать выходной каталог: %v", err)
 	}
 
 	filesProcessed := 0
@@ -32,30 +29,32 @@ func EncryptDirCommand(root, output string, key []byte) error {
 		}
 
 		rel, _ := filepath.Rel(root, path)
-		outputPath := filepath.Join(output, rel+".enc")
+		outPath := filepath.Join(output, rel+".enc")
 
-		// Чтение файла
+		logVerbose(verbose, "📄 Зашифровывается: %s", path)
 		data, err := ioutil.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("не удалось прочитать файл %s: %v", path, err)
+			return fmt.Errorf("❌ не удалось прочитать файл %s: %v", path, err)
 		}
 
-		// Шифрование
-		encrypted := modules.MultiLayerEncrypt(data, key)
-
-		// Запись зашифрованного файла
-		err = os.MkdirAll(filepath.Dir(outputPath), 0755)
+		encrypted, err := modules.MultiLayerEncrypt(data, masterKey)
 		if err != nil {
-			return fmt.Errorf("не удалось создать путь %s: %v", outputPath, err)
+			return fmt.Errorf("❌ ошибка шифрования файла %s: %v", path, err)
 		}
 
-		err = ioutil.WriteFile(outputPath, encrypted, 0644)
+		err = os.MkdirAll(filepath.Dir(outPath), 0755)
 		if err != nil {
-			return fmt.Errorf("не удалось записать файл %s: %v", outputPath, err)
+			return fmt.Errorf("❌ не удалось создать структуру каталогов: %v", err)
+		}
+
+		err = os.WriteFile(outPath, encrypted, 0644)
+		if err != nil {
+			return fmt.Errorf("❌ не удалось записать файл %s: %v", outPath, err)
 		}
 
 		filesProcessed++
 		totalSize += int64(len(data))
+		logVerbose(verbose, "✅ Зашифрован: %s → %s", path, outPath)
 		return nil
 	})
 
@@ -63,9 +62,6 @@ func EncryptDirCommand(root, output string, key []byte) error {
 		return err
 	}
 
-	fmt.Printf("✅ Каталог успешно зашифрован\n")
-	fmt.Printf("📁 Зашифровано файлов: %d | Общий размер: %d байт\n", filesProcessed, totalSize)
-	fmt.Printf("⏱ Время: %v\n", time.Since(start))
-
+	logVerbose(verbose, "📁 Обработано файлов: %d | Общий размер: %d байт", filesProcessed, totalSize)
 	return nil
 }
